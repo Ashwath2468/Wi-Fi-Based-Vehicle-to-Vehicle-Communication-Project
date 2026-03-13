@@ -1,0 +1,365 @@
+// Server Side Sensors----
+#include <ESP8266WiFi.h>
+#include "ESPAsyncWebServer.h"
+#include<LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0X27 , 16 , 2);
+const char* ssid = "ESPAP";
+const char* password = "123456789";
+
+AsyncWebServer server(80);
+
+int Echo = D6, Trig = D5;
+int AlcoholSensor = D4;
+int Right = D0, Left = D3 , Stop = D7;
+int buzzer = D8;
+int VibrationSensor = A0;
+int D = 0, AlcoholValue = 0, VibrationValue = 0;
+String Direction = "";
+
+int MotorEn = 3;
+bool VibrationFlag = 0, ObjectFlag = 0, AlcoholFlag = 0, StopFlag = 0;
+
+void GetDistance()
+{
+  digitalWrite(Trig , HIGH);
+  delayMicroseconds(10);
+  digitalWrite(Trig , LOW);
+  int t = pulseIn(Echo , HIGH);
+  D = t / 58.77;
+  //  Serial.println("Distance:" + String(D));
+  if (D < 50)
+  {
+     digitalWrite(buzzer , HIGH);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Alert....!Object");
+    lcd.setCursor(0, 1);
+    lcd.print("    Detected    ");
+    delay(1000);
+    digitalWrite(buzzer , LOW);
+  }
+  else
+  {
+    ObjectFlag = 0;
+  }
+}
+
+void GetAlcohol()
+{
+  AlcoholValue = digitalRead(AlcoholSensor);
+  //  Serial.println("Alcohol val: " + String(AlcoholValue));
+  if (AlcoholValue == 0)
+  {
+    digitalWrite(buzzer , HIGH);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Alert....!");
+    lcd.setCursor(0, 1);
+    lcd.print("Driver Alcoholic");
+    delay(1000);
+    digitalWrite(buzzer , LOW);
+  }
+  else
+  {
+    AlcoholFlag = 0;
+  }
+}
+
+void GetVibration()
+{
+  VibrationValue = analogRead(VibrationSensor);
+  //  Serial.println("Vibration : " + String(VibrationValue));
+  if (VibrationValue > 500)
+  {
+    digitalWrite(buzzer , HIGH);
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Alert..!Accident");
+    lcd.setCursor(0, 1);
+    lcd.print("    Detected    ");
+    delay(1000);
+    digitalWrite(buzzer , LOW);
+  }
+  else
+  {
+    VibrationFlag = 0;
+  }
+}
+
+void GetDirection()
+{
+
+  //  Serial.print(digitalRead(Right));
+  //  Serial.print(digitalRead(Left));
+  //  Serial.print(digitalRead(Stop));
+  if (digitalRead(Right) == 0)
+  {
+    Direction = "Right";
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Direction:" + Direction);
+  }
+  else if (digitalRead(Left) == 0)
+  {
+    Direction = "Left";
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Direction:" + Direction);
+  }
+  else if (digitalRead(Stop) == 0)
+  {
+    Direction = "Stop";
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("Direction:" + Direction);
+    StopFlag = 1;
+  }
+  else
+  {
+    Direction = "";
+    StopFlag = 0;
+  }
+  //  Serial.println("Direction: " + Direction);
+
+}
+
+String readDistance()
+{
+  return String(23);
+}
+
+String readAlcohol()
+{
+  return String(45);
+}
+
+String readVibration() {
+  return String(13);
+}
+
+String readDirection()
+{
+  return Direction;
+}
+
+void setup() {
+  //  Serial.begin(115200);
+  pinMode(buzzer , OUTPUT);
+  pinMode(Trig , OUTPUT);
+  pinMode(Echo , INPUT);
+  pinMode(Right , INPUT);
+  pinMode(Left , INPUT);
+  pinMode(Stop , INPUT);
+  pinMode(MotorEn , OUTPUT);
+  digitalWrite(MotorEn , LOW);
+  pinMode(AlcoholSensor , INPUT);
+  digitalWrite(buzzer , LOW);
+ delay(3000); // let DHCP & AP service stabilize
+
+  IPAddress IP = WiFi.softAPIP();
+  //  Serial.print("AP IP address: ");
+  //  Serial.println(IP);  // should print 192.168.4.1
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("    Wel-Come    ");
+  lcd.setCursor(0, 2);
+  lcd.print("     Server     ");
+  delay(1000);
+  // Register HTTP endpoints
+  server.on("/Distance", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(200, "text/plain", readDistance());
+  });
+  server.on("/Alcohol", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(200, "text/plain", readAlcohol());
+  });
+  server.on("/Vibration", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(200, "text/plain", readVibration());
+  });
+  server.on("/Direction", HTTP_GET, [](AsyncWebServerRequest * request) {
+    request->send(200, "text/plain", readDirection());
+  });
+ //  Serial.println("Server started");
+}
+
+void loop() {
+  // nothing here'
+  GetDistance();
+  delay(100);
+  GetAlcohol();
+  delay(100);
+  GetVibration();
+  delay(100);
+  GetDirection();
+  delay(100);
+  if (ObjectFlag == 1 || AlcoholFlag == 1 || VibrationFlag == 1 || StopFlag == 1)
+  {
+    digitalWrite(MotorEn , LOW);
+  }
+  else
+  {
+    digitalWrite(MotorEn , HIGH);
+  }
+}
+
+
+// Client Side----
+#include <ESP8266WiFi.h>
+#include <ESP8266HTTPClient.h>
+#include <WiFiClient.h>
+#include<LiquidCrystal_I2C.h>
+LiquidCrystal_I2C lcd(0X27 , 16 , 2);
+
+const char* ssid = "ESPAP";
+const char* password = "123456789";
+
+const char* serverNameTemp = "http://192.168.4.1/Distance";
+const char* serverNameHumi = "http://192.168.4.1/Alcohol";
+const char* serverNamePres = "http://192.168.4.1/Vibration";
+const char* serverNameDire = "http://192.168.4.1/Direction";
+
+String distance, alcohol, vibration, Direction;
+unsigned long previousMillis = 0;
+const long interval = 5000;
+int D = 0 , Alcoholvalue = 0, VibrationValue = 0;
+int buzzer = D5, M1 = D6, M2 = D7;
+bool VibrationFlag = 0, ObjectFlag = 0, AlcoholFlag = 0, StopFlag = 0;
+
+void setup() {
+  Serial.begin(115200);
+  Serial.println();
+  Serial.print("Connecting to ");
+  Serial.println(ssid);
+  pinMode(buzzer , OUTPUT);
+  digitalWrite(buzzer , LOW);
+  analogWrite(M1 , 0);
+  analogWrite(M2 , 0);
+  lcd.init();
+  lcd.backlight();
+  lcd.setCursor(0, 0);
+  lcd.print("    Wel-Come    ");
+  lcd.setCursor(0, 2);
+  lcd.print("     Client     ");
+  delay(1000);
+ 
+  // Wait up to 20s
+  unsigned long startAttemptTime = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttemptTime < 20000) {
+    Serial.print(".");
+    delay(500);
+  }
+
+ 
+  analogWrite(M1 , 120);
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+
+  if (currentMillis - previousMillis >= interval) {
+  
+    if (WiFi.status() == WL_CONNECTED) {
+      distance = httpGETRequest(serverNameTemp);
+      alcohol = httpGETRequest(serverNameHumi);
+      vibration = httpGETRequest(serverNamePres);
+      Direction = httpGETRequest(serverNameDire);
+      D = distance.toInt();
+       Serial.println("Distance: " + distance + " cm | Alcohol: " + alcohol + " | vibration: " + vibration + " | Direction: " + Direction);
+      if (D < 50)
+      {
+        ObjectFlag = 1;
+        digitalWrite(buzzer , HIGH);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Alert..!Object  ");
+        lcd.setCursor(0, 1);
+        lcd.print("    Detected    ");
+        delay(1000);
+        digitalWrite(buzzer , LOW);
+      }
+      else
+      {
+        ObjectFlag = 0;
+      }
+
+      if (Alcoholvalue == 0)
+      {
+        digitalWrite(buzzer , HIGH);
+        AlcoholFlag = 1;
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Alert..!Alcohol  ");
+        lcd.setCursor(0, 1);
+        lcd.print("    Detected    ");
+        delay(1000);
+        digitalWrite(buzzer , LOW);
+      }
+      else
+      {
+        AlcoholFlag = 0;
+      }
+
+      if (VibrationValue > 500)
+      {
+        VibrationFlag = 1;
+        digitalWrite(buzzer , HIGH);
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Alert..!Accident ");
+        lcd.setCursor(0, 1);
+        lcd.print("    Detected    ");
+        delay(1000);
+        digitalWrite(buzzer , LOW);
+      }
+      else
+      {
+        VibrationFlag = 0;
+      }
+      lcd.clear();
+      lcd.setCursor(0, 0);
+      lcd.print("Direction:" + Direction);
+      delay(1000);
+      if (-1 != Direction.indexOf("Stop"))
+      {
+        StopFlag = 1;
+      }
+      else
+      {
+        StopFlag = 0;
+      }
+      if (ObjectFlag == 1 || AlcoholFlag == 1 || VibrationFlag == 1 || StopFlag == 1)
+      {
+        analogWrite(M1 , 60);
+      }
+      else
+      {
+        analogWrite(M1 , 127);
+      }
+    }
+    else
+    {
+      Serial.println("WiFi disconnected, reconnecting...");
+      WiFi.reconnect();
+    }
+  }
+}
+
+String httpGETRequest(const char* serverName) {
+  HTTPClient http;
+  String payload = "--";
+
+  http.begin(client, serverName);
+  int httpResponseCode = http.GET();
+
+  if (httpResponseCode > 0) {
+    payload = http.getString();
+  } else {
+    Serial.print("Error code: ");
+    Serial.println(httpResponseCode);
+  }
+
+  http.end();
+  return payload;
+}
+
